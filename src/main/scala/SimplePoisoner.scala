@@ -1,8 +1,9 @@
 package net.evilmonkeylabs.demo
 
-import akka.actor.{PoisonPill, ActorSystem, Actor, Props}
+import akka.actor.{ActorSystem, Actor, Props}
 import akka.event.Logging
 
+import akka.actor.PoisonPill
 
 object SimplePoisoner extends App {
   val system = ActorSystem("SimpleSystem")
