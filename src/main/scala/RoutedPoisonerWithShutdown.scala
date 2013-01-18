@@ -8,20 +8,16 @@ import akka.event.Logging
 
 class SystemKillingRouterOverwatch extends Actor {
   val log = Logging(context.system, this)
-  /**
-   * Terminated messages are generated for *all* actors, and we'll
-   * need to make a list of ones we care about observing
-   */
-  val toWatch = scala.collection.mutable.Set.empty[ActorRef]
+
+  // Setup watching of our other two actors
+  override def preStart() {
+    context.watch(RoutedPoisonerWithShutdown.router)
+    context.watch(RoutedPoisonerWithShutdown.simpleActor)
+  }
 
   def receive = {
-    case ref: ActorRef =>
-      toWatch += ref
-      log.info("Now watching for termination events on Actor '%s'".format(ref))
-      context.watch(ref) // Tell akka it should notify people about `ref` terminations
-      sender ! true
     case Terminated(corpse) =>
-      if (toWatch contains corpse) {
+      if (corpse == RoutedPoisonerWithShutdown.router) {
         log.warning("Received termination notification for '" + corpse + "'," +
                     "is in our watch list. Terminating ActorSystem.")
         RoutedPoisonerWithShutdown.system.shutdown()
@@ -32,22 +28,20 @@ class SystemKillingRouterOverwatch extends Actor {
   }
 
 }
+
 object RoutedPoisonerWithShutdown extends App {
   val system = ActorSystem("SimpleSystem")
-  val overwatch = system.actorOf(Props[SystemKillingRouterOverwatch])
   val router = system.actorOf(Props[SimpleActor].withRouter(FromConfig()),
                               name = "simpleRoutedActor")
-
-  // Send a copy of the ActorRef to our overwatch actor
-  import akka.pattern.ask
-  import akka.util.duration._
-  import akka.util.Timeout
-
-  implicit val timeout = Timeout(5 seconds) // needed for `?`
-
-  overwatch ? router // await a reply to ensure setup before continuing
+  val simpleActor = system.actorOf(Props[SimpleActor], name = "simpleActor")
+  // Start him after the others so their refs are available and he can grab 'em (lazy code)
+  val overwatch = system.actorOf(Props[SystemKillingRouterOverwatch])
 
   router ! Broadcast(Message("I will not buy this record, it is scratched!"))
+
+  simpleActor ! Message("If there's any more stock film of women applauding, I'll clear the court.")
+
+  simpleActor ! PoisonPill
 
   for (n <- 1 until 10)  router ! Message("Hello, Akka #%d!".format(n))
   router ! Broadcast(PoisonPill)
